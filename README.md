@@ -1,3 +1,4 @@
+![Client-Server FSM Diagram](client_server-fsm.png)
 
 ## Build Instructions
 
