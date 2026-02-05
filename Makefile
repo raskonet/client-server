@@ -1,22 +1,37 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -std=c99
-LDFLAGS = -lpthread
 
-all: server client
+CFLAGS  = -Wall -Wextra -Werror -std=c99 -g -pthread
+LDFLAGS = -pthread
 
-server: server.c
-	$(CC) $(CFLAGS) -o server server.c $(LDFLAGS)
+BIN_DIR = bin
 
-client: client.c
-	$(CC) $(CFLAGS) -o client client.c
+TARGETS = server client admin
+
+all: $(BIN_DIR) $(TARGETS)
+
+$(BIN_DIR):
+	mkdir -p $(BIN_DIR)
+
+server: server.c | $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/server server.c $(LDFLAGS)
+
+client: client.c | $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/client client.c $(LDFLAGS)
+
+admin: admin.c | $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/admin admin.c $(LDFLAGS)
 
 clean:
-	rm -f server client
+	rm -rf $(BIN_DIR)
 
 run-server: server
-	./server
+	./$(BIN_DIR)/server
 
 run-client: client
-	./client
+	./$(BIN_DIR)/client
 
-.PHONY: all clean run-server run-client
+run-admin: admin
+	./$(BIN_DIR)/admin
+
+.PHONY: all clean run-server run-client run-admin
+

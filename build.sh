@@ -1,17 +1,24 @@
 #!/bin/bash
+set -e
 
-echo "Building System..."
+echo "=== Building LicenseManager ==="
 
 mkdir -p build
 cd build
 
-cmake ..
-make
+cmake -DCMAKE_BUILD_TYPE=Release ..
+make -j$(nproc)
 
 echo ""
 echo "Build complete!"
-echo "Executables are in: build/bin/"
 echo ""
-echo "To run:"
-echo "  Terminal 1: ./build/bin/server"
-echo "  Terminal 2: ./build/bin/client"
+echo "Executables:"
+echo "  build/bin/server"
+echo "  build/bin/client"
+echo "  build/bin/admin"
+echo ""
+echo "Run:"
+echo "  ./build/bin/server"
+echo "  ./build/bin/client"
+echo "  ./build/bin/admin"
+
