@@ -19,7 +19,7 @@
 #include <sys/types.h>
 
 #define PORT 8080
-#define MAX_CLIENTS 100
+#define MAX_CLIENTS 100 
 #define TOKEN_SIZE 16
 
 #define S_OK 0
@@ -39,6 +39,7 @@ typedef struct {
     time_t expiry;
 } ClientRecord;
 
+#pragma pack(push, 1)
 typedef struct {
     unsigned char token[TOKEN_SIZE];
     int action;
@@ -51,7 +52,9 @@ typedef struct {
     unsigned char token[TOKEN_SIZE];
     char message[64];
 } ResponsePacket;
+#pragma pack(pop)
 
+//we can get this from env but lets just hardcode this here
 const unsigned char ADMIN_KEY[TOKEN_SIZE] =
     {0xde,0xad,0xbe,0xef,1,2,3,4,5,6,7,8,9,10,11,12};
 
@@ -61,6 +64,16 @@ pthread_mutex_t db_lock;
 
 static FILE *log_file = NULL;
 static pthread_mutex_t log_lock;
+
+
+static time_t add_months_years(time_t now, int months, int years) {
+    struct tm t;
+    localtime_r(&now, &t);
+    t.tm_mon  += months;
+    t.tm_year += years;
+    return mktime(&t);
+}
+
 
 static void log_init(void) {
     log_file = fopen("server.log", "a");
@@ -131,6 +144,7 @@ static void secure_random_bytes(unsigned char *buf, size_t n) {
         close(fd);
         if (got == (ssize_t)n) return; 
     }
+    //secondary 
     for (size_t i = 0; i < n; ++i) {
         buf[i] = (unsigned char)(rand() & 0xFF);
     }
@@ -162,8 +176,8 @@ void *connection_handler(void *arg) {
         res.status = S_UNKNOWN;
         strncpy(res.message, "Unhandled action or unauthorized", sizeof(res.message)-1);
 
-        ssize_t rd = read(sock, &req, sizeof(req));
-        if (rd <= 0) break;
+        ssize_t rd = read_all(sock, &req, sizeof(req));
+        if (rd != sizeof(req)) break;
 
         char tokhex[33] = {0};
         token_hex(req.token, tokhex);
@@ -315,14 +329,28 @@ void *connection_handler(void *arg) {
 
             rec->pending = 0;
             rec->is_active = 1;
-            int days = 20 + (rand() % 11);
-            rec->expiry = now + (time_t)days * 86400;
+            time_t base = rec->expiry > now ? rec->expiry : now;
+            time_t new_expiry;
 
-            res.status = S_OK;
-            res.seconds_left = (long)days * 86400;
+          if (rand() % 2 == 0) {
+            int months = 1 + (rand() % 12);
+            new_expiry = add_months_years(base, months, 0);
+            log_event("ACTIVATE_REGISTER duration=%d months", months);
+          } else {
+            int years = 1 + (rand() % 3);
+            new_expiry = add_months_years(base, 0, years);
+              log_event("ACTIVATE_REGISTER duration=%d years", years);
+            }
+
+          rec->expiry = new_expiry;
+
+          res.status = S_OK;
+          res.seconds_left = (long)difftime(new_expiry, now);
+
             strncpy(res.message, "Activated", sizeof(res.message)-1);
 
-            log_event("ACTIVATE_REGISTER success token=%s days=%d", tokhex, days);
+            log_event("ACTIVATE_REGISTER success token=%s seconds_left=%ld", tokhex, res.seconds_left);
+
 
             pthread_mutex_unlock(&db_lock);
             if (write_all(sock, &res, sizeof(res)) < 0) {
@@ -377,14 +405,29 @@ void *connection_handler(void *arg) {
             }
 
             rec->pending = 0;
-            int days = 20 + (rand() % 11);
-            rec->expiry = now + (time_t)days * 86400;
+           
+          time_t base = rec->expiry > now ? rec->expiry : now;
+          time_t new_expiry;
 
-            res.status = S_OK;
-            res.seconds_left = (long)days * 86400;
+          if (rand() % 2 == 0) {
+          int months = 1 + (rand() % 12);
+          new_expiry = add_months_years(base, months, 0);
+          log_event("ACTIVATE_RENEW duration=%d months", months);
+          } else {
+          int years = 1 + (rand() % 3);
+            new_expiry = add_months_years(base, 0, years);
+            log_event("ACTIVATE_RENEW duration=%d years", years);
+          }
+
+          rec->expiry = new_expiry;
+
+          res.status = S_OK;
+          res.seconds_left = (long)difftime(new_expiry, now);
+
             strncpy(res.message, "Renewed and activated", sizeof(res.message)-1);
 
-            log_event("ACTIVATE_RENEW success token=%s days=%d", tokhex, days);
+            log_event("ACTIVATE_RENEW success token=%s seconds_left=%ld", tokhex, res.seconds_left);
+
 
             pthread_mutex_unlock(&db_lock);
             if (write_all(sock, &res, sizeof(res)) < 0) {
@@ -467,4 +510,3 @@ int main() {
     if (log_file) fclose(log_file);
     return 0;
 }
-

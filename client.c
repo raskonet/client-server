@@ -3,10 +3,12 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <errno.h>
 
 #define PORT 8080
 #define TOKEN_SIZE 16
 
+#pragma pack(push, 1)
 typedef struct {
     unsigned char token[TOKEN_SIZE];
     int action;
@@ -19,9 +21,40 @@ typedef struct {
     unsigned char token[TOKEN_SIZE];
     char message[64];
 } ResponsePacket;
+#pragma pack(pop)
 
 unsigned char my_token[TOKEN_SIZE];
 int has_token = 0; 
+
+static ssize_t read_all(int fd, void *buf, size_t count) {
+    unsigned char *p = (unsigned char*)buf;
+    size_t total = 0;
+    while (total < count) {
+        ssize_t n = read(fd, p + total, count - total);
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            return -1;
+        } else if (n == 0) {
+            break; 
+        }
+        total += (size_t)n;
+    }
+    return (ssize_t)total;
+}
+
+static ssize_t write_all(int fd, const void *buf, size_t count) {
+    const unsigned char *p = (const unsigned char*)buf;
+    size_t total = 0;
+    while (total < count) {
+        ssize_t n = write(fd, p + total, count - total);
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            return -1;
+        }
+        total += (size_t)n;
+    }
+    return (ssize_t)total;
+}
 
 void save_token() {
     FILE *f = fopen("license.key", "wb");
@@ -57,20 +90,16 @@ void print_hex_token() {
 
 int main() {
     load_token();
-
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0) { perror("socket"); return 1; }
-
     struct sockaddr_in serv;
     serv.sin_family = AF_INET;
     serv.sin_port = htons(PORT);
     inet_pton(AF_INET, "127.0.0.1", &serv.sin_addr);
-
     if (connect(sock, (struct sockaddr*)&serv, sizeof(serv)) < 0) { 
         perror("Connection Failed. Is the server running?"); 
         return 1; 
     }
-
     printf("--- Connected to License Server ---\n");
     if (has_token) {
         printf("License File Found. Token: ");
@@ -78,7 +107,6 @@ int main() {
     } else {
         printf("No License File Found. Please Register.\n");
     }
-
     while (1) {
         printf("\n1. Register (Request New License)\n");
         printf("2. Check License Status\n");
@@ -88,18 +116,17 @@ int main() {
         
         int c; 
         if (scanf("%d", &c) != 1) break;
-
         RequestPacket req;
         ResponsePacket res;
         memset(&req, 0, sizeof(req));
         memset(&res, 0, sizeof(res));
-
         if (c == 1) {
             req.action = 1;
-            if (write(sock, &req, sizeof(req)) <= 0) break;
-            if (read(sock, &res, sizeof(res)) <= 0) break;
+            if (write_all(sock, &req, sizeof(req)) != sizeof(req)) break;
+            if (read_all(sock, &res, sizeof(res)) != sizeof(res)) break;
             
-            printf("[Server] %s (Status: %d)\n", res.message, res.status);
+            printf("[Server] %s\n", res.message);
+
             
             if (res.status == 0) {
                 memcpy(my_token, res.token, TOKEN_SIZE);
@@ -116,10 +143,11 @@ int main() {
             req.action = 0;
             memcpy(req.token, my_token, TOKEN_SIZE);
             
-            if (write(sock, &req, sizeof(req)) <= 0) break;
-            if (read(sock, &res, sizeof(res)) <= 0) break;
+            if (write_all(sock, &req, sizeof(req)) != sizeof(req)) break;
+            if (read_all(sock, &res, sizeof(res)) != sizeof(res)) break;
             
-            printf("[Server] %s (Status: %d)\n", res.message, res.status);
+            printf("[Server] %s\n", res.message);
+
             if (res.status == 0) {
                 int days = res.seconds_left / (24*3600);
                 printf(">> Validity: %d days remaining.\n", days);
@@ -133,16 +161,15 @@ int main() {
             req.action = 2;
             memcpy(req.token, my_token, TOKEN_SIZE);
             
-            if (write(sock, &req, sizeof(req)) <= 0) break;
-            if (read(sock, &res, sizeof(res)) <= 0) break;
+            if (write_all(sock, &req, sizeof(req)) != sizeof(req)) break;
+            if (read_all(sock, &res, sizeof(res)) != sizeof(res)) break;
             
-            printf("[Server] %s (Status: %d)\n", res.message, res.status);
+            printf("[Server] %s\n", res.message);
         } 
         else {
             break;
         }
     }
-
     close(sock);
     return 0;
 }
